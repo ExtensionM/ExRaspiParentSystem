@@ -111,7 +111,7 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	};
 
 	/**
-	 * {@link children_client.ssl_module} のインスタンス
+	 * {@link ssl_module} のインスタンス
 	 * @type {ssl_module}
 	 */
 	var sslm = new ssl_module(public_key_path,private_key_path);
@@ -137,6 +137,11 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 		 */
 		this.socket = socket;
 		/**
+		 * 接続状態の確認
+		 */
+		
+		var connection = true;
+		/**
 		 * 子機のGUID
 		 * @type {string}
 		 */
@@ -146,11 +151,14 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 		 * @param {string} str - 送信する文字列
 		 */	
 		this.write = function(str){
-			try{
-				this.socket.write(str,'utf-8');
-			}catch(ex){
-				console.log("[TLS] Message Write Error: " + ex.stack);
+			if(connection){
+				try{
+					this.socket.write(str,'utf-8');
+				}catch(ex){
+					console.log("[CHILDREN CLIENT] [TLS CLIENT] Message Write Error: " + ex.stack);
+				}
 			}
+			return connection;
 		};
 
 		/**
@@ -159,14 +167,30 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 		 * @listens error  
 		 */
 		this.socket.on("error",function(ex){
-			console.log("[RASPI CHILDREN] [TLS CLINET] ERROR: " + ex.stack);
+			console.log("[CHILDREN CLIENT] [TLS CLINET]  " + ex.stack);
 		});
 
 		/**
+		 * ソケットがオープンした時
+		 */
+		var socket_this = this;
+		this.socket.on("connect",function(ex){
+			console.log("[CHILDREN CLIENT] [TLS CLINET]  Open Connection " + socket_this.guid);
+		});	
+
+		/**
+		 * ソケットがクローズした場合
+		 */
+		this.socket.on("close",function(ex){
+			console.log("[CHILDREN CLIENT] [TLS CLINET] Close Connection to " + socket_this.guid);
+			connection = false;
+		});
+			
+		/**
 		 * ソケットからデータが来た場合の関数
 		 */
-		this.sockt.on('data',function(str){
-			console.log("[RASPI CHILDREN] [TLS CLIENT] Message recived:" + str);
+		this.socket.on('data',function(str){
+			console.log("[CHILDREN CLIENT] [TLS CLIENT] Message recived:" + str);
 			th.message_parse(str);
 		});
 	};
@@ -184,31 +208,17 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	 */
 	var tls_clients = {};
 	/**
-	 * tls_clientのguidの配列
-	 * @type {Array.string}
-	 */
-	var client_list = [];
-	/**
 	 * 子機と接続するtls_clientを作成します
 	 *
 	 * @param {string} guid - 子機のguid
 	 * @param {dgram.rinfo} rinfo - 子機のアドレス情報 {@link http://u111u.info/momf}
+	 * @param {num} port - ポート番号
 	 */
-	var create_tlsclient = function(guid,rinfo){
-		if(client_list.indexOf(guid) == -1){
-			var socket = tls.connect(15000,rinfo.address,option);
+	var create_tlsclient = function(guid,port,rinfo){
+			var socket = tls.connect(port,rinfo.address,option);
 			//TODO 
 			//子機に命令を送るときにtls_clientsのguidから判別するのではなくいい感じにtls_client.guidから判別したい
 			tls_clients[guid] = new tls_client(socket,guid);
-			client_list.push(guid);
-		}else{
-			delete client_list[client_list.indexOf(guid)];
-			var socket = tls.connect(15000,rinfo.address,option);
-			//TODO 
-			//子機に命令を送るときにtls_clientsのguidから判別するのではなくいい感じにtls_client.guidから判別したい
-			tls_clients[guid] = new tls_client(socket,guid);
-			client_list.push(guid);
-		}	
 	};
 	//-------------------------------------------------------------------
 
@@ -234,12 +244,26 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 		raschi_data.find({},function(err,docs){
 			var id = -1;
 			for(var i=0,size =docs.length;i &lt; size; ++i){
-				var children_id = docs[i].id;
-				if(children_id == obj["guid"]) id == docs[i].id;
+				if(docs[i].id == obj["guid"]) id = docs[i].id;
 			}
+			console.log(id);
 			if(id == -1){
 				register_client_with_mongodb(obj);
 			}
+		});
+	};
+	
+	/**
+	 * guidから子機の名前を取り出します
+	 * @param {string} guid - 子機のid
+	 */
+	var search_name_from_db = function(guid){
+		raschi_data.find({},function(err,docs){
+			var name = "";
+			for(var i=0,size = docs.length; i&lt; size; ++i){
+				if(docs[i].id = guid) name = docs[i].name;
+			}
+			return name;
 		});
 	};
 
@@ -261,14 +285,14 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	 * udp_serverでエラーが起きた際のプログラム
 	 */
 	udp_server.on("error",function(err){
-		console.log("[UDP] Server error: " + err.stack);
+		console.log("[CHILDREN CLIENT] [UDP SERVER] Server error: " + err.stack);
 	});
 
 	/**
 	 * updサーバーでメッセージを受け取った時のプログラム
 	 */
 	udp_server.on("message",function(msg,rinfo){
-		console.log("[UDP] message comming");
+		console.log("[CHILDREN CLIENT] [UDP SERVER] message comming:");
 		connect_to_children(msg,rinfo);
 	});
 
@@ -278,7 +302,7 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	 */
 	var start_udp_server = function(){
 		udp_server.bind(8000,"0.0.0.0");
-		console.log("OPEN UDP SERVER");
+		console.log("[CHILDREN CLIENT] [UDP SERVER] OPEN UDP SERVER");
 	};
 
 	//--------------------------------------------------------------------	
@@ -317,7 +341,7 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	 */
 	var connect_to_mpserver = function(){
 		tcp_client.connect({port:tcp_client_port},function(){
-			console.log("CONNECT TO MPSERVER");
+			console.log("[CHILDREN CLIENT] [TCP CLIENT] CONNECT TO MPSERVER");
 		});
 	};
 
@@ -334,10 +358,10 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	 * メッセージパーサー用TCPサーバーのインスタンス
 	 */
 	var tcp_server = new net.Server(function(socket){
-		console.log("CONNECT CLIENT");
+		console.log("[CHILDREN CLIENT] [TCP SERVER] CONNECT CLIENT");
 		connect_to_mpserver();
 		socket.on('error',function(){
-			console.log("[CHILDREN CLIENT] [ TCP SERVER] SOCKET ERROR");
+			console.log("[CHILDREN CLIENT] [TCP SERVER] SOCKET ERROR");
 		});
 		socket.on('data',function(str){
 			send_command_to_children(str);
@@ -348,14 +372,14 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	 * メッセージサーバー用サーバーがエラーを起こした時
 	 */
 	tcp_server.on('error',function(){
-		console.log("[CHILDREN CLIENT][ TCP SERVER] SERVER ERROR");
+		console.log("[CHILDREN CLIENT] [TCP SERVER] SERVER ERROR");
 	});
 	/**
 	 * メッセージサーバー用TCPサーバーの待機を始める
 	 */
 	var listen_tcp_server = function(){
 		tcp_server.listen(tcp_server_port,function(){
-			console.log("[SERVER : TCP SERVER] SERVER LISTEN START]");
+			console.log("[CHILDREN CLIENT] [TCP SERVER] SERVER LISTEN START");
 		});
 	};
 
@@ -369,9 +393,10 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	 */
 	var connect_to_children = function(str,client_info){
 		json_str = sslm.decrypt(str.toString('utf8',0,client_info.size));
+		console.log(json_str);
 		obj = JSON.parse(json_str);
 		register_to_db(obj);
-		create_tlsclient(json_str["guid"],client_info);		
+		create_tlsclient(obj.guid,obj.port,client_info);		
 	};
 	/**
 	 * 子機に命令を送信する
@@ -381,7 +406,25 @@ var children_client = function(public_key_path,private_key_path,crt_file_path){
 	var send_command_to_children = function(str){
 		json_obj = JSON.parse(str);
 		message = JSON.stringify(json_obj["message"]);
-		tls_clients[json_obj["guid"]].write(message);
+		if(!tls_clients[json_obj.id].write(message)){
+			var error_obj = new Error("Connection Refused");
+			var name = search_name_from_db(json_obj.id); 
+			var obj = {
+					"type" : "result",
+					"value": {
+						"id" : json_obj.id,
+						"name" : name,
+						"value" : {
+							"functionName" : json_obj.function,
+							"hasError" : true,
+							"cancelled" : true,
+							"error" : error_obj,
+							"result" : undefined
+						}
+					}
+			};
+			send_to_mpserver(JSON.stringify(obj));
+		}
 	};
 
 	/**
@@ -413,13 +456,13 @@ module.exports = children_client;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="children_client.html">children_client</a></li><li><a href="children_client-ssl_module.html">ssl_module</a></li><li><a href="children_client-tls_client.html">tls_client</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="children_client.html">children_client</a></li><li><a href="children_client-ssl_module.html">ssl_module</a></li><li><a href="children_client-tls_client.html">tls_client</a></li><li><a href="websocket_client.html">websocket_client</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.3.2</a> on Sat Jul 11 2015 01:19:46 GMT+0900 (JST)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.3.2</a> on Tue Jul 14 2015 16:48:44 GMT+0900 (JST)
 </footer>
 
 <script> prettyPrint(); </script>
