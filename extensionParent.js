@@ -12,4 +12,6 @@ var RaspiParentSystem = function(public_key_path,private_key_path,crt_file_path)
 		mpserver.start();
 	}
 };
+var raspiSystem = new RaspiParentSystem("./certs/public_key.pem","./certs/private_key.pem","./certs/server.crt");
+raspiSystem.start();
 module.exports = RaspiParentSystem;
