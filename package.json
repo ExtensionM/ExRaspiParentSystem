@@ -10,6 +10,7 @@
   "license": "MIT",
   "dependencies": {
     "mongoose": "^4.0.5",
+    "sleep-async": "^1.0.1",
     "ursa": "^0.8.5",
     "ws": "^0.7.2"
   }
